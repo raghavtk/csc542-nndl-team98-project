@@ -23,6 +23,7 @@ from unet_mech.interpret.hooks import (
     register_hooks,
     remove_hooks,
 )
+from unet_mech.interpret.sparsity import compute_sparsity_scores
 
 __all__ = [
     "register_hooks",
@@ -42,4 +43,5 @@ __all__ = [
     "channel_correlation",
     "pca_coords",
     "threshold_clusters",
+    "compute_sparsity_scores",
 ]

@@ -12,7 +12,7 @@ import torch.nn.functional as F
 from loguru import logger
 
 from unet_mech.interpret.hooks import get_activations, register_hooks, remove_hooks
-from unet_mech.viz.qualitative import denormalize_imagenet
+from unet_mech.viz.qualitative import denormalize_input
 
 Selection = Literal["first", "top_abs_mean"]
 
@@ -76,8 +76,8 @@ def save_bottleneck_channel_grid(
     gs = gridspec.GridSpec(nrows, ncols, figure=fig, hspace=0.35, wspace=0.2)
 
     ax0 = fig.add_subplot(gs[0, :])
-    ax0.imshow(denormalize_imagenet(image[0]))
-    ax0.set_title("Input (ImageNet denorm)", fontsize=10)
+    ax0.imshow(denormalize_input(image[0]))
+    ax0.set_title("Input X-ray", fontsize=10)
     ax0.axis("off")
 
     for k, ch in enumerate(idx_list):
@@ -149,7 +149,7 @@ def save_bottleneck_with_overlay(
         align_corners=True,
     )[0, 0].numpy()
     up = (up - up.min()) / (up.max() - up.min() + 1e-8)
-    ctx = denormalize_imagenet(image[0]) / 255.0
+    ctx = denormalize_input(image[0]) / 255.0
 
     fig, ax = plt.subplots(figsize=(5, 5))
     ax.imshow(ctx)

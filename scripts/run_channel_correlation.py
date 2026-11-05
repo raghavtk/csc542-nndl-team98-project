@@ -16,12 +16,9 @@ if str(_ROOT) not in sys.path:
 import numpy as np
 import torch
 from loguru import logger
-from PIL import Image
-from torch.utils.data import DataLoader, Dataset, random_split
-from torchvision import transforms
 
 from unet_mech.config import DEFAULT_CFG
-from unet_mech.data import MontgomeryDataset, build_dataloaders, download_montgomery
+from unet_mech.data import build_dataloaders, download_montgomery
 from unet_mech.interpret.ablation import _mean_metrics_over_loader
 from unet_mech.interpret.channel_correlation import (
     channel_correlation,
@@ -47,7 +44,7 @@ def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--ckpt", required=True)
     p.add_argument("--model", choices=["baby_unet", "resnet18_unet"], default="baby_unet")
-    p.add_argument("--layer-name", default="bottleneck")
+    p.add_argument("--layer-name", default=None)
     p.add_argument("--split", choices=["val", "test"], default="val")
     p.add_argument("--batch-size", type=int, default=None)
     p.add_argument("--max-batches", type=int, default=None)
@@ -69,62 +66,8 @@ def parse_args() -> argparse.Namespace:
     )
     p.add_argument("--focus-channels", default="16,118,105,60")
     p.add_argument("--ablation-csv", default=None)
-    p.add_argument("--out-dir", default="outputs/channel_correlation")
+    p.add_argument("--out-dir", default="outputs/rerun/channel_correlation")
     return p.parse_args()
-
-
-def _resampling(name: str):
-    return getattr(getattr(Image, "Resampling", Image), name)
-
-
-class _BabyNoAugSubset(Dataset):
-    def __init__(self, subset, img_size: int):
-        self.subset = subset
-        self.img_size = img_size
-        self.image_tf = transforms.Compose(
-            [
-                transforms.ToTensor(),
-                transforms.Normalize([0.5], [0.5]),
-            ]
-        )
-        self.mask_tf = transforms.ToTensor()
-
-    def __len__(self):
-        return len(self.subset)
-
-    def __getitem__(self, idx):
-        ds = self.subset.dataset
-        real_idx = self.subset.indices[idx]
-        img_path, left_path, right_path = ds.samples[real_idx]
-        size = (self.img_size, self.img_size)
-        image = Image.open(img_path).convert("L").resize(size, _resampling("BILINEAR"))
-        left = Image.open(left_path).convert("L").resize(size, _resampling("NEAREST"))
-        right = Image.open(right_path).convert("L").resize(size, _resampling("NEAREST"))
-        left_t = self.mask_tf(left)
-        right_t = self.mask_tf(right)
-        mask = ((left_t > 0.5) | (right_t > 0.5)).float()
-        return self.image_tf(image), mask
-
-
-def build_baby_loaders(root: Path, cfg: dict, batch_size: int) -> tuple[DataLoader, DataLoader]:
-    full = MontgomeryDataset(
-        root=str(root),
-        img_size=cfg["img_size"],
-        transform=transforms.ToTensor(),
-        mask_transform=transforms.ToTensor(),
-    )
-    n = len(full)
-    n_train = int(n * cfg["train_frac"])
-    n_val = int(n * cfg["val_frac"])
-    n_test = n - n_train - n_val
-    gen = torch.Generator().manual_seed(cfg["seed"])
-    _train, val, test = random_split(full, [n_train, n_val, n_test], generator=gen)
-    val_ds = _BabyNoAugSubset(val, cfg["img_size"])
-    test_ds = _BabyNoAugSubset(test, cfg["img_size"])
-    return (
-        DataLoader(val_ds, batch_size=batch_size, shuffle=False, num_workers=2, pin_memory=True),
-        DataLoader(test_ds, batch_size=batch_size, shuffle=False, num_workers=2, pin_memory=True),
-    )
 
 
 def load_model(args: argparse.Namespace, device: str) -> torch.nn.Module:
@@ -196,19 +139,19 @@ def main() -> None:
     out_dir.mkdir(parents=True, exist_ok=True)
 
     root = download_montgomery(cfg["data_dir"])
-    if args.model == "baby_unet":
-        val_loader, test_loader = build_baby_loaders(root, cfg, batch_size)
-        image_mode = "gray"
-    else:
-        _train_loader, val_loader, test_loader = build_dataloaders(
-            root=str(root),
-            batch_size=batch_size,
-            img_size=cfg["img_size"],
-            train_frac=cfg["train_frac"],
-            val_frac=cfg["val_frac"],
-            seed=cfg["seed"],
-        )
-        image_mode = "imagenet"
+    _train_loader, val_loader, test_loader = build_dataloaders(
+        root=str(root),
+        batch_size=batch_size,
+        img_size=cfg["img_size"],
+        train_frac=cfg["train_frac"],
+        val_frac=cfg["val_frac"],
+        seed=cfg["seed"],
+        image_mode="L" if args.model == "baby_unet" else "RGB",
+    )
+    image_mode = "gray" if args.model == "baby_unet" else "imagenet"
+    args.layer_name = args.layer_name or (
+        "bottleneck" if args.model == "baby_unet" else "enc_layer4"
+    )
     loader = val_loader if args.split == "val" else test_loader
 
     model = load_model(args, device)

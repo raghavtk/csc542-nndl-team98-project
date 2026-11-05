@@ -5,3 +5,7 @@ __pytest_cache__/
 .venv/
 /data/
 /outputs/
+diff.patch
+images_Comparison.png
+images_Comparison2.png
+projectWorkSplitUp.png

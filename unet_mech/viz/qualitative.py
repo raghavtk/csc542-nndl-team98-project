@@ -19,6 +19,14 @@ def denormalize_imagenet(t: torch.Tensor) -> np.ndarray:
     return (img.permute(1, 2, 0).cpu().numpy() * 255).astype(np.uint8)
 
 
+def denormalize_input(t: torch.Tensor) -> np.ndarray:
+    """Return an RGB image for plotting either input normalization."""
+    if t.shape[0] == 1:
+        gray = ((t[0] * 0.5 + 0.5).clamp(0, 1).cpu().numpy() * 255).astype(np.uint8)
+        return np.repeat(gray[:, :, None], 3, axis=2)
+    return denormalize_imagenet(t)
+
+
 def plot_predictions(
     model: nn.Module,
     loader: DataLoader,

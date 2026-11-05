@@ -16,23 +16,24 @@ from loguru import logger
 from unet_mech.config import DEFAULT_CFG
 from unet_mech.data import build_dataloaders, download_montgomery
 from unet_mech.interpret.ablation import ablation_sweep_bottleneck
-from unet_mech.models import ResNet18UNet
+from unet_mech.models import BabyUNet, ResNet18UNet
 
 
 def parse_args():
     p = argparse.ArgumentParser()
+    p.add_argument("--model", choices=["baby_unet", "resnet18_unet"], default="baby_unet")
     p.add_argument("--ckpt", type=str, required=True)
     p.add_argument(
         "--channels",
         type=str,
         default="0,1,2,3,4",
-        help="Comma-separated single-channel ablations, or 'range(0,16)'-style: use start-end as two args",
+        help="Comma-separated channels. Pass an empty string for a baseline-only run.",
     )
     p.add_argument("--from-ch", type=int, default=None)
     p.add_argument("--to-ch", type=int, default=None, help="exclusive end for a range")
-    p.add_argument("--out-csv", type=str, default="outputs/ablation_sweep.csv")
+    p.add_argument("--out-csv", type=str, default="outputs/rerun/ablation_sweep.csv")
     p.add_argument("--split", choices=["val", "test"], default="val")
-    p.add_argument("--layer-name", type=str, default="enc_layer4")
+    p.add_argument("--layer-name", type=str, default=None)
     return p.parse_args()
 
 
@@ -46,18 +47,21 @@ def main():
     else:
         ch_list = [int(x.strip()) for x in args.channels.split(",") if x.strip()]
 
+    baby = args.model == "baby_unet"
+    layer_name = args.layer_name or ("bottleneck" if baby else "enc_layer4")
     root = download_montgomery(cfg["data_dir"])
-    train_loader, val_loader, test_loader = build_dataloaders(
+    _, val_loader, test_loader = build_dataloaders(
         root=str(root),
         batch_size=cfg["batch_size"],
         img_size=cfg["img_size"],
         train_frac=cfg["train_frac"],
         val_frac=cfg["val_frac"],
         seed=cfg["seed"],
+        image_mode="L" if baby else "RGB",
     )
     loader = val_loader if args.split == "val" else test_loader
 
-    model = ResNet18UNet(pretrained=False).to(device)
+    model = (BabyUNet() if baby else ResNet18UNet(pretrained=False)).to(device)
     ck = torch.load(args.ckpt, map_location=device)
     model.load_state_dict(ck["state_dict"])
 
@@ -70,7 +74,7 @@ def main():
         device,
         ch_list,
         csv_path=args.out_csv,
-        layer_name=args.layer_name,
+        layer_name=layer_name,
     )
     logger.info(
         f"Done. baseline IoU={res.baseline.mean_iou:.4f}  rows={len(res.rows)}  csv={args.out_csv}"

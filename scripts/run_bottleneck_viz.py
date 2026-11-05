@@ -19,7 +19,7 @@ from unet_mech.interpret.bottleneck_viz import (
     save_bottleneck_channel_grid,
     save_bottleneck_with_overlay,
 )
-from unet_mech.models import ResNet18UNet
+from unet_mech.models import BabyUNet, ResNet18UNet
 
 
 def parse_args():
@@ -30,13 +30,13 @@ def parse_args():
         required=True,
         help="Checkpoint .pth (state_dict under 'state_dict')",
     )
-    p.add_argument("--out-dir", type=str, default="outputs/bottleneck_viz")
+    p.add_argument("--out-dir", type=str, default="outputs/rerun/bottleneck_viz")
     p.add_argument("--max-ch", type=int, default=32)
     p.add_argument(
         "--selection", choices=["first", "top_abs_mean"], default="top_abs_mean"
     )
     p.add_argument("--num-samples", type=int, default=3)
-    p.add_argument("--layer-name", type=str, default="enc_layer4")
+    p.add_argument("--layer-name", type=str, default=None)
     p.add_argument("--overlay-ch", type=int, default=0, help="Also save single-ch overlay; set -1 to skip")
     return p.parse_args()
 
@@ -45,16 +45,19 @@ def main():
     args = parse_args()
     cfg = copy.deepcopy(DEFAULT_CFG)
     device = "cuda" if torch.cuda.is_available() else "cpu"
+    baby = args.model == "baby_unet"
+    layer_name = args.layer_name or ("bottleneck" if baby else "enc_layer4")
     root = download_montgomery(cfg["data_dir"])
-    train_loader, val_loader, test_loader = build_dataloaders(
+    _, val_loader, _ = build_dataloaders(
         root=str(root),
         batch_size=1,
         img_size=cfg["img_size"],
         train_frac=cfg["train_frac"],
         val_frac=cfg["val_frac"],
         seed=cfg["seed"],
+        image_mode="L" if baby else "RGB",
     )
-    model = ResNet18UNet(pretrained=False).to(device)
+    model = (BabyUNet() if baby else ResNet18UNet(pretrained=False)).to(device)
     ck = torch.load(args.ckpt, map_location=device)
     model.load_state_dict(ck["state_dict"])
     model.eval()
@@ -69,7 +72,7 @@ def main():
             image[0],
             device,
             save_path=out / f"sample_{written:02d}_bottleneck_grid.png",
-            layer_name=args.layer_name,
+            layer_name=layer_name,
             max_channels=args.max_ch,
             selection=args.selection,  # type: ignore[arg-type]
         )
@@ -79,7 +82,7 @@ def main():
                 image[0],
                 device,
                 save_path=out / f"sample_{written:02d}_overlay_ch{args.overlay_ch}.png",
-                layer_name=args.layer_name,
+                layer_name=layer_name,
                 channel=args.overlay_ch,
             )
         written += 1

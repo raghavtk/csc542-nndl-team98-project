@@ -87,7 +87,7 @@ def print_architecture_reference(
     logger.info("=" * 65)
     for name, tensor in acts.items():
         b, c, h, w = tensor.shape
-        tag = " ← bottleneck" if name == "enc_layer4" else ""
+        tag = " ← bottleneck" if name in ("bottleneck", "enc_layer4") else ""
         logger.info(f"  {name:<14} [{b}, {c:>3}, {h:>3}, {w:>3}]{tag}")
 
     logger.info("-" * 65)

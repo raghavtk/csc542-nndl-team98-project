@@ -84,6 +84,7 @@ class BabyUNet(nn.Module):
             ("enc2", self.enc2),
             ("enc3", self.enc3),
             ("bottleneck", self.bottleneck),
+            ("enc_layer4", self.bottleneck),  # Person 2 alias
             ("up3", self.up3.conv),
             ("up2", self.up2.conv),
             ("up1", self.up1.conv),
